@@ -8,4 +8,7 @@ type Job struct {
 	SkipRunning  bool
 	RegistryAuth bool
 	Replicas     uint64
+	EventRun     bool
+	EventRunKey  string
+	EventTimeout string
 }

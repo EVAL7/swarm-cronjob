@@ -2,13 +2,16 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strconv"
+	"time"
 
 	"github.com/crazy-max/swarm-cronjob/internal/docker"
 	"github.com/crazy-max/swarm-cronjob/internal/model"
 	"github.com/crazy-max/swarm-cronjob/internal/worker"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/swarm"
 	"github.com/mitchellh/mapstructure"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog/log"
@@ -134,6 +137,19 @@ func (sc *SwarmCronjob) crudJob(serviceName string) (bool, error) {
 			}
 		case "swarm.cronjob.schedule":
 			wc.Job.Schedule = labelValue
+		case "swarm.cronjob.event.enable":
+			wc.Job.EventRun, err = strconv.ParseBool(labelValue)
+			if err != nil {
+				log.Error().Str("service", service.Name).Err(err).Msgf("Cannot parse %s value of label %s", labelValue, labelKey)
+			}
+		case "swarm.cronjob.event.key":
+			wc.Job.EventRunKey = labelValue
+		case "swarm.cronjob.event.timeout":
+			wc.Job.EventTimeout = labelValue
+			_, err = time.ParseDuration(labelValue)
+			if err != nil {
+				log.Error().Str("service", service.Name).Err(err).Msgf("Cannot parse %s value of label %s", labelValue, labelKey)
+			}
 		case "swarm.cronjob.skip-running":
 			wc.Job.SkipRunning, err = strconv.ParseBool(labelValue)
 			if err != nil {
@@ -197,4 +213,87 @@ func (sc *SwarmCronjob) Close() {
 func (sc *SwarmCronjob) removeJob(serviceName string, id cron.EntryID) {
 	delete(sc.jobs, serviceName)
 	sc.cron.Remove(id)
+}
+
+func (sc *SwarmCronjob) RunJobByEvent(serviceName string, key string) {
+	jobID, jobFound := sc.jobs[serviceName]
+
+	if jobFound {
+		wc := sc.cron.Entry(jobID).Job.(*worker.Client)
+		if wc.Job.EventRun {
+			if wc.Job.EventRunKey == key {
+				sc.cron.Entry(jobID).Job.Run()
+			} else {
+				log.Info().Msgf("Wrong key for run job for service '%s'", serviceName)
+			}
+		} else {
+			log.Info().Msgf("Сервис %s не настроен на запуск по событию", serviceName)
+		}
+
+	} else {
+		log.Info().Msgf("Не найден сервис '%s'", serviceName)
+	}
+}
+
+func (sc *SwarmCronjob) Tasks(serviceName string) ([]*model.TaskInfo, error) {
+	return sc.docker.TaskList(serviceName)
+}
+
+func (sc *SwarmCronjob) WaitForEnd(serviceName string, tasks []*model.TaskInfo) (string, error) {
+	jobID, jobFound := sc.jobs[serviceName]
+
+	var wc *worker.Client
+
+	if jobFound {
+		wc = sc.cron.Entry(jobID).Job.(*worker.Client)
+	}
+
+	list, err := sc.docker.TaskList(serviceName)
+	if err != nil {
+		log.Error().Err(err)
+		return "", err
+	}
+
+	keys := make(map[string]*model.TaskInfo)
+	for _, x := range tasks {
+		keys[x.ID] = x
+	}
+
+	// Получаем указатель на стартанувшую задачу
+	for _, x := range list {
+
+		if _, ok := keys[x.ID]; !ok {
+			log.Info().Msgf("Новая задача %s", x.ID)
+			log.Info().Msgf("Timiout - %s", wc.Job.EventTimeout)
+
+			timeout, _ := time.ParseDuration(wc.Job.EventTimeout)
+			for timeout := time.After(timeout); ; {
+				select {
+				case <-timeout:
+					log.Error().Msg("Timeout")
+					return "", errors.New("Timeout")
+				default:
+				}
+
+				tl, _ := sc.docker.TaskList(serviceName)
+				for _, tsk := range tl {
+					if tsk.ID == x.ID {
+						switch tsk.Status.State {
+						case swarm.TaskStateComplete:
+							logs, err := sc.docker.TaskLogs(context.Background(), tsk.ID)
+							if err != nil {
+								log.Error().Msgf("Cannot get logs for %s", tsk.ID)
+							}
+							return logs, nil
+						case swarm.TaskStateFailed:
+							return "", errors.New(tsk.Status.Err)
+						}
+					}
+				}
+			}
+
+		}
+	}
+
+	return "", errors.New("Не найден список задач")
 }

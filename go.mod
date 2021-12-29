@@ -5,11 +5,17 @@ go 1.17
 require (
 	github.com/alecthomas/kong v0.2.18
 	github.com/docker/cli v20.10.10+incompatible
-	github.com/docker/docker v20.10.10+incompatible
+	github.com/docker/docker v20.10.12+incompatible
 	github.com/mitchellh/mapstructure v1.4.2
 	github.com/pkg/errors v0.9.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.26.0
+)
+
+require (
+	github.com/go-macaron/inject v0.0.0-20160627170012-d8a0b8677191 // indirect
+	github.com/unknwon/com v0.0.0-20190804042917-757f69c95f3e // indirect
+	gopkg.in/ini.v1 v1.62.0 // indirect
 )
 
 require (
@@ -55,4 +61,5 @@ require (
 	google.golang.org/genproto v0.0.0-20210602131652-f16073e35f0c // indirect
 	google.golang.org/grpc v1.38.0 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
+	gopkg.in/macaron.v1 v1.4.0
 )

@@ -1,0 +1,10 @@
+FROM alpine:3.14
+
+RUN apk --update --no-cache add \
+  ca-certificates \
+  openssl
+
+ADD swarm-cronjob /usr/local/bin/
+RUN swarm-cronjob --version
+
+ENTRYPOINT [ "swarm-cronjob" ]

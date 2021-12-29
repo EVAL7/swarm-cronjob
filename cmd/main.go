@@ -9,6 +9,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/crazy-max/swarm-cronjob/internal/app"
+	"github.com/crazy-max/swarm-cronjob/internal/eventservice"
 	"github.com/crazy-max/swarm-cronjob/internal/logging"
 	"github.com/crazy-max/swarm-cronjob/internal/model"
 	"github.com/rs/zerolog/log"
@@ -16,6 +17,7 @@ import (
 
 var (
 	sc      *app.SwarmCronjob
+	es      *eventservice.EventService
 	cli     model.Cli
 	version = "dev"
 )
@@ -49,6 +51,10 @@ func main() {
 		if sc != nil {
 			sc.Close()
 		}
+
+		if es != nil {
+			es.Shutdown()
+		}
 		log.Warn().Msgf("Caught signal %v", sig)
 		os.Exit(1)
 	}()
@@ -58,6 +64,10 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Cannot initialize swarm-cronjob")
 	}
+
+	// configure and run EventService
+	es = eventservice.NewEventService(sc, cli.EventPort, cli.EventTimeout)
+	es.Run()
 
 	// Run
 	if err := sc.Run(); err != nil {

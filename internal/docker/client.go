@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"strings"
 
@@ -25,6 +26,7 @@ type Client interface {
 	ServiceList(args *model.ServiceListArgs) ([]*model.ServiceInfo, error)
 	Service(name string) (*model.ServiceInfo, error)
 	TaskList(service string) ([]*model.TaskInfo, error)
+	TaskLogs(ctx context.Context, taskid string) (string, error)
 }
 
 type dockerClient struct {
@@ -90,4 +92,24 @@ func normalizeImage(image string) string {
 		image = image[:i]
 	}
 	return image
+}
+
+func (c *dockerClient) TaskLogs(ctx context.Context, taskid string) (string, error) {
+	r, err := c.api.TaskLogs(ctx, taskid, types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Details:    true,
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	buf := new(bytes.Buffer)
+	_, err = buf.ReadFrom(r)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+
 }
